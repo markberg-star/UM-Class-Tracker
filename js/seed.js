@@ -1,9 +1,12 @@
 // First-run seed — Mark's REAL transcript data, confirmed against the
 // unofficial transcript screenshots (Fall 2025, Spring 2026, Fall 2026).
-// No sample/fake data. Guarded by settings.seedVersion so it never re-runs.
+// v2 adds initial 0-point "Review Syllabus" assignments (worth 0 pts so they
+// don't affect grading) for every Fall 2026 class, due on the semester start
+// date (Aug 17). These are non-graded planning items to encourage early review.
+// Guarded by settings.seedVersion so it never re-runs on existing installs.
 import { db, uid } from './db.js';
 
-const SEED_VERSION = 1;
+const SEED_VERSION = 2;
 
 // Calendar color-coding from the approved UM supplementary palette.
 const COLORS = { sky: '#4A9BD1', gold: '#C2A44D', sea: '#7AB08F', olive: '#9CA635', red: '#C8102E', taupe: '#B8A87E' };
@@ -24,7 +27,6 @@ function currentClass(semesterId, code, name, creditHours, color) {
     cutoffs: [],
   };
 }
-
 export async function seedIfNeeded() {
   const seeded = await db.settings.get('seedVersion');
   if (seeded && seeded.value >= SEED_VERSION) return;
@@ -56,9 +58,31 @@ export async function seedIfNeeded() {
     currentClass(f26.id, 'MGT 304', 'Organizational Behavior', 3, COLORS.red),
   ];
 
-  await db.transaction('rw', db.semesters, db.classes, db.settings, db.todos, async () => {
+  // Initial 0-point syllabus review items for every Fall 2026 class.
+  // Due on semester start date (Aug 17). pointsPossible=0 so they are ignored
+  // in all grade calculations (see isGraded in grades.js). Category will show
+  // as custom "Syllabus".
+  const syllabusItems = classes
+    .filter(c => c.semesterId === f26.id)
+    .map(c => ({
+      id: uid(),
+      classId: c.id,
+      title: 'Review Syllabus',
+      type: 'assignment',
+      category: 'Syllabus',
+      dueAt: `${f26.startDate}T23:59`,
+      pointsPossible: 0,
+      scoreEarned: null,
+      status: 'upcoming',
+      priority: false,
+      materials: [],
+      notes: 'Review the full syllabus before class begins. Note grading weights, late policies, important dates, office hours, participation expectations, and all instructor policies.',
+    }));
+
+  await db.transaction('rw', db.semesters, db.classes, db.settings, db.todos, db.items, async () => {
     await db.semesters.bulkPut([f25, s26, f26]);
     await db.classes.bulkPut(classes);
+    await db.items.bulkPut(syllabusItems);
     await db.settings.bulkPut([
       { key: 'seedVersion', value: SEED_VERSION },
       { key: 'gpaTargetMode', value: 'protect4' },
